@@ -1,4 +1,5 @@
 import React from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { 
   Wifi, 
   WifiOff, 
@@ -7,15 +8,20 @@ import {
   CheckCircle, 
   Clock,
   Zap,
-  Database
+  Database,
+  Play,
+  PowerOff,
+  Loader2
 } from 'lucide-react'
 import { clsx } from 'clsx'
+import { api } from '../lib/api'
+import { MEGConfig } from '../types'
 
 interface ConnectionStatusProps {
   isConnected: boolean
   connectionType?: 'TCP' | 'LSL' | null
-  host?: string
-  port?: number
+  host: string
+  port: number
   samplingRate?: number
   channels?: number
   lastUpdate?: string
@@ -38,6 +44,47 @@ export default function ConnectionStatus({
   quality = 'good',
   className
 }: ConnectionStatusProps) {
+  const queryClient = useQueryClient()
+
+  const connectMutation = useMutation({
+    mutationFn: (config: MEGConfig) => api.meg.connect(config),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system-status'] })
+      console.log('MEG system connected successfully.')
+    },
+    onError: (error: any) => {
+      console.error('Failed to connect to MEG system:', error)
+      // Optionally, display an error message to the user
+    },
+  })
+
+  const disconnectMutation = useMutation({
+    mutationFn: () => api.meg.disconnect(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system-status'] })
+      console.log('MEG system disconnected successfully.')
+    },
+    onError: (error: any) => {
+      console.error('Failed to disconnect from MEG system:', error)
+      // Optionally, display an error message to the user
+    },
+  })
+
+  const handleConnect = () => {
+    const config: MEGConfig = {
+      host,
+      port,
+      samplingRate: samplingRate || 375, // Use prop or default
+      channels: channels || 192,         // Use prop or default
+      timeout: 10000,
+    }
+    connectMutation.mutate(config)
+  }
+
+  const handleDisconnect = () => {
+    disconnectMutation.mutate()
+  }
+
   const getStatusColor = () => {
     if (!isConnected) return 'text-red-500 bg-red-50 border-red-200'
     switch (quality) {
@@ -143,7 +190,7 @@ export default function ConnectionStatus({
               <div className="flex justify-between items-center">
                 <span className="text-sm opacity-75">Frame Rate</span>
                 <span className="text-sm font-medium">{frameRate.toFixed(1)} FPS</span>
-              </div>
+                </div>
             )}
 
             {throughput && (
@@ -168,8 +215,8 @@ export default function ConnectionStatus({
         )}
       </div>
 
-      {/* Connection Indicator */}
-      <div className="mt-3 pt-3 border-t border-current border-opacity-20">
+      {/* Connection Indicator and Buttons */}
+      <div className="mt-3 pt-3 border-t border-current border-opacity-20 flex items-center justify-between">
         <div className="flex items-center space-x-2">
           <div className={clsx(
             'w-2 h-2 rounded-full',
@@ -178,6 +225,33 @@ export default function ConnectionStatus({
           <span className="text-xs opacity-75">
             {isConnected ? 'Live data stream' : 'No connection'}
           </span>
+        </div>
+
+        <div className="flex space-x-2">
+          <button
+            onClick={handleConnect}
+            disabled={isConnected || connectMutation.isPending}
+            className="flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+          >
+            {connectMutation.isPending ? (
+              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            ) : (
+              <Play className="h-3 w-3 mr-1" />
+            )}
+            Connect
+          </button>
+          <button
+            onClick={handleDisconnect}
+            disabled={!isConnected || disconnectMutation.isPending}
+            className="flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+          >
+            {disconnectMutation.isPending ? (
+              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            ) : (
+              <PowerOff className="h-3 w-3 mr-1" />
+            )}
+            Disconnect
+          </button>
         </div>
       </div>
     </div>

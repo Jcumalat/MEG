@@ -61,7 +61,15 @@ export default function SignalVisualization({
 
   // Animation loop for real-time rendering
   useEffect(() => {
-    if (!isStreaming || !data || !canvasRef.current) return
+    if (!data || !canvasRef.current) {
+      // If no data or canvas not ready, still try to draw to clear or show "No Signal"
+      const canvas = canvasRef.current
+      const ctx = canvas?.getContext('2d')
+      if (ctx) {
+        drawSignal(ctx, canvas.width, canvas.height)
+      }
+      return // No animation needed if no data
+    }
 
     const canvas = canvasRef.current
     const ctx = canvas.getContext('2d')
@@ -79,7 +87,7 @@ export default function SignalVisualization({
         cancelAnimationFrame(animationRef.current)
       }
     }
-  }, [isStreaming, data, channelConfigs, timeWindow, amplitude])
+  }, [data, channelConfigs, timeWindow, amplitude, samplingRate]) // Added samplingRate to dependencies
 
   const drawSignal = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
     // Clear canvas

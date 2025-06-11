@@ -73,9 +73,10 @@ class EnhancedMEGConnection:
         self.socket = None
         self.state = ConnectionState.DISCONNECTED
         
-        # CONFIRMED: Exact frame structure from previous analysis
-        self.FRAME_START = b'KCLB'   # Frame start marker
-        self.FRAME_END = b'DNEB'     # Payload end marker
+        # CONFIRMED: Exact frame structure from previous analysis (Port 8089 - Sensor Data)
+        self.FRAME_START_MARKER = b'KCLB'   # Frame start marker (Reverted - observed markers d8be8d00, ce80ce3f are inconsistent)
+        self.PAYLOAD_END_MARKER = b'DNEB'     # Payload end marker (Param from PDF)
+        self.FRAME_FINAL_END_MARKER = b'KCLB' # Final frame end marker (from PDF)
         self.HEADER_SIZE = 20        # 5 × uint32_t
         self.PAYLOAD_SIZE = 16384    # 4096 float32 values
         self.FOOTER_SIZE = 12        # DNEB + Checksum + KCLB
@@ -168,7 +169,7 @@ class EnhancedMEGConnection:
                 except Exception as e:
                     logger.error(f"Status callback error: {e}")
     
-    async def test_connection_async(self, timeout=5.0) -> bool:
+    async def test_connection_async(self, timeout=5.0) -> Optional[Dict[str, Any]]:
         """Async connection test with performance measurement"""
         logger.info(f"🔍 Testing connection to {self.host}:{self.port}")
         
@@ -205,9 +206,9 @@ class EnhancedMEGConnection:
             logger.info(f"   📊 Data received: {len(all_data)} bytes in {data_time:.3f}s")
             logger.info(f"   📊 Throughput: {throughput_mbps:.1f} Mbps")
             
+            frames_found = 0
             if len(all_data) >= self.TOTAL_FRAME_SIZE:
                 # Test frame parsing
-                frames_found = 0
                 buffer_pos = 0
                 
                 while buffer_pos < len(all_data) - self.TOTAL_FRAME_SIZE:
@@ -221,21 +222,27 @@ class EnhancedMEGConnection:
                 
                 if frames_found > 0:
                     logger.info("✅ Connection test successful")
-                    return True
+                    return {
+                        "connection_time": connection_time,
+                        "throughput_mbps": throughput_mbps,
+                        "frames_found": frames_found,
+                        "total_bytes_received": len(all_data)
+                    }
             
             logger.warning("⚠️ No valid frames found")
-            return False
+            return None
             
         except Exception as e:
             logger.error(f"❌ Connection test failed: {e}")
-            return False
+            return None
     
     def test_connection(self, timeout=5.0) -> bool:
         """Synchronous wrapper for connection test"""
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            return loop.run_until_complete(self.test_connection_async(timeout))
+            result = loop.run_until_complete(self.test_connection_async(timeout))
+            return result is not None # Return boolean based on whether result was found
         finally:
             loop.close()
     
@@ -247,7 +254,7 @@ class EnhancedMEGConnection:
         
         try:
             self._set_state(ConnectionState.CONNECTING)
-            logger.info(f"🔗 Connecting to {self.host}:{self.port}")
+            logger.info(f"🔗 Attempting to connect socket to {self.host}:{self.port}")
             
             # Create socket with optimizations
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -259,6 +266,7 @@ class EnhancedMEGConnection:
             
             self.socket.settimeout(10.0)
             self.socket.connect((self.host, self.port))
+            logger.info(f"✅ Socket connected to {self.host}:{self.port}")
             self._set_state(ConnectionState.CONNECTED)
             
             # Reset performance counters
@@ -276,8 +284,26 @@ class EnhancedMEGConnection:
             logger.info("✅ Connected and streaming started")
             return True
             
+        except socket.timeout as e:
+            logger.error(f"❌ Connection timed out to {self.host}:{self.port}: {e}")
+            self._set_state(ConnectionState.ERROR)
+            for callback in self.error_callbacks:
+                try:
+                    callback(e)
+                except:
+                    pass
+            return False
+        except ConnectionRefusedError as e:
+            logger.error(f"❌ Connection refused by {self.host}:{self.port}. Is the MEG system running and accessible? {e}")
+            self._set_state(ConnectionState.ERROR)
+            for callback in self.error_callbacks:
+                try:
+                    callback(e)
+                except:
+                    pass
+            return False
         except Exception as e:
-            logger.error(f"❌ Connection failed: {e}")
+            logger.error(f"❌ General connection error to {self.host}:{self.port}: {e}", exc_info=True)
             self._set_state(ConnectionState.ERROR)
             for callback in self.error_callbacks:
                 try:
@@ -446,7 +472,8 @@ class EnhancedMEGConnection:
         
         try:
             # Validate frame start
-            if frame_data[:4] != self.FRAME_START:
+            if frame_data[:4] != self.FRAME_START_MARKER:
+                logger.warning(f"[EnhancedMEG] Frame start marker mismatch. Expected: {self.FRAME_START_MARKER.hex()}, Got: {frame_data[:4].hex()}")
                 return None
             
             # Parse header
@@ -456,9 +483,21 @@ class EnhancedMEGConnection:
             acquisition_rate = header_values[4]
             
             # Validate header values
-            if (payload_size != self.PAYLOAD_SIZE or
-                n_sensors != self.n_sensors or
-                acquisition_rate != self.sampling_rate):
+            logger.info(f"[EnhancedMEG] Attempting to parse frame. Received Header Values: payload_size_from_header={payload_size}, n_sensors_from_header={n_sensors}, acquisition_rate_from_header={acquisition_rate}")
+            logger.info(f"[EnhancedMEG] Expected Header Values: PAYLOAD_SIZE={self.PAYLOAD_SIZE}, n_sensors={self.n_sensors}, sampling_rate={self.sampling_rate}")
+
+            valid_payload_size = payload_size == self.PAYLOAD_SIZE
+            valid_n_sensors = n_sensors == self.n_sensors
+            valid_acquisition_rate = acquisition_rate == self.sampling_rate
+
+            if not (valid_payload_size and valid_n_sensors and valid_acquisition_rate):
+                logger.warning(f"[EnhancedMEG] Header value mismatch:")
+                if not valid_payload_size:
+                    logger.warning(f"  Payload Size: Expected {self.PAYLOAD_SIZE}, Got {payload_size}")
+                if not valid_n_sensors:
+                    logger.warning(f"  Num Sensors: Expected {self.n_sensors}, Got {n_sensors}")
+                if not valid_acquisition_rate:
+                    logger.warning(f"  Acq Rate: Expected {self.sampling_rate}, Got {acquisition_rate}")
                 return None
             
             # Extract and validate payload
@@ -469,6 +508,7 @@ class EnhancedMEGConnection:
             # Parse as float32 array
             float_array = np.frombuffer(payload_data, dtype='<f4')
             if len(float_array) != self.EXPECTED_FLOATS:
+                logger.debug(f"Float array length mismatch: {len(float_array)}/{self.EXPECTED_FLOATS}")
                 return None
             
             # Reshape to confirmed structure
@@ -478,11 +518,27 @@ class EnhancedMEGConnection:
             footer_start = payload_end
             footer_data = frame_data[footer_start:footer_start + self.FOOTER_SIZE]
             
-            if len(footer_data) >= 4 and footer_data[:4] == self.FRAME_END:
+            if len(footer_data) < self.FOOTER_SIZE:
+                logger.debug("Incomplete footer data.")
+                return None
+
+            payload_end_marker_received = footer_data[0:4]
+            checksum_received = struct.unpack('<I', footer_data[4:8])[0] # Checksum is 4 bytes
+            frame_final_end_marker_received = footer_data[8:12] # Final KCLB is 4 bytes
+            
+            valid_payload_end_marker = payload_end_marker_received == self.PAYLOAD_END_MARKER
+            valid_frame_final_end_marker = frame_final_end_marker_received == self.FRAME_FINAL_END_MARKER
+
+            if valid_payload_end_marker and valid_frame_final_end_marker:
                 # Extract MEG channels (first 192 of 256)
                 meg_data = sensor_data[:, :self.n_channels]
                 return meg_data
             
+            logger.warning(f"[EnhancedMEG] Footer marker mismatch:")
+            if not valid_payload_end_marker:
+                logger.warning(f"  Payload End Marker: Expected {self.PAYLOAD_END_MARKER.hex()}, Got {payload_end_marker_received.hex()}")
+            if not valid_frame_final_end_marker:
+                logger.warning(f"  Frame Final End Marker: Expected {self.FRAME_FINAL_END_MARKER.hex()}, Got {frame_final_end_marker_received.hex()}")
             return None
             
         except Exception as e:
@@ -492,7 +548,7 @@ class EnhancedMEGConnection:
     def _find_next_sync_position(self) -> int:
         """Find next frame sync position in buffer"""
         for i in range(1, len(self.frame_buffer) - self.HEADER_SIZE):
-            if self.frame_buffer[i:i+4] == self.FRAME_START:
+            if self.frame_buffer[i:i+4] == self.FRAME_START_MARKER:
                 # Quick validation - check if header looks valid
                 try:
                     header_values = struct.unpack('<5I', self.frame_buffer[i:i+self.HEADER_SIZE])
@@ -500,7 +556,7 @@ class EnhancedMEGConnection:
                         header_values[3] == self.n_sensors and
                         header_values[4] == self.sampling_rate):
                         return i
-                except:
+                except (struct.error, IndexError): # Catch struct.error for incomplete headers
                     continue
         return 0
     
@@ -749,6 +805,250 @@ class EnhancedMEGConnection:
         logger.info(f"   Parse success: {self.parse_success_rate:.1f}%")
         logger.info(f"   Sync losses: {self.sync_losses}")
         logger.info(f"   Total data: {self.total_bytes_received / 1024 / 1024:.1f} MB")
+
+
+# New class for Sensor Status Connection
+@dataclass
+class SensorStatus:
+    """Data class for parsed sensor status information."""
+    frame_number: int
+    payload_size_from_header_field: int # The 38400 value
+    num_sensors: int # The 64 value
+    actual_payload_size_for_status: int # The 600 value
+    status_strings: str
+    status_values_raw_hex: str
+    parsed_sensor_statuses: Dict[int, Dict[str, int]]
+    timestamp: float
+
+class MEGSensorStatusConnection:
+    """
+    Handles connection to N1 Sensor Status Port (8090) and parses status frames.
+    """
+    def __init__(self, host='192.168.0.10', port=8090):
+        self.host = host
+        self.port = port
+        self.socket = None
+        self.state = ConnectionState.DISCONNECTED
+        self.latest_sensor_statuses: Optional[SensorStatus] = None
+        
+        # Frame structure constants based on debug_status_parser.py findings
+        self.FRAME_START_MARKER = b'KCLB'
+        self.PAYLOAD_END_MARKER = b'DNEB'
+        self.FRAME_END_MARKER = b'KCLB'
+        self.HEADER_SIZE = 20
+        self.FOOTER_SIZE = 12
+        self.EXPECTED_TOTAL_BYTES = 600 # Expected size of the status payload (strings + values)
+        self.EXPECTED_NUM_SENSORS = 64
+        
+        self.frame_buffer = b''
+        self.max_buffer_size = 100000 # 100KB max buffer
+        self.buffer_size = 65536 # Receive buffer size
+        
+        self.stream_thread = None
+        self.running = False
+        self.consecutive_errors = 0
+        
+        logger.info(f"🔧 MEG Sensor Status Connection initialized")
+        logger.info(f"   Target: {self.host}:{self.port}")
+
+    def _set_state(self, new_state: ConnectionState):
+        """Set connection state and notify callbacks (if any)"""
+        if self.state != new_state:
+            old_state = self.state
+            self.state = new_state
+            logger.info(f"🔄 Sensor Status State change: {old_state.value} → {new_state.value}")
+
+    def connect_and_stream(self) -> bool:
+        """Establish connection and start streaming sensor status"""
+        if self.state in [ConnectionState.CONNECTED, ConnectionState.STREAMING]:
+            logger.warning("Sensor Status: Already connected")
+            return True
+        
+        try:
+            self._set_state(ConnectionState.CONNECTING)
+            logger.info(f"🔗 Sensor Status: Connecting to {self.host}:{self.port}")
+            
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024*1024)
+            self.socket.settimeout(10.0)
+            self.socket.connect((self.host, self.port))
+            self._set_state(ConnectionState.CONNECTED)
+            
+            self.running = True
+            self.stream_thread = threading.Thread(target=self._high_performance_stream, daemon=True)
+            self.stream_thread.start()
+            
+            self._set_state(ConnectionState.STREAMING)
+            logger.info("✅ Sensor Status: Connected and streaming started")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Sensor Status: Connection failed: {e}")
+            self._set_state(ConnectionState.ERROR)
+            return False
+
+    def _high_performance_stream(self):
+        """High-performance streaming thread for sensor status"""
+        logger.info("🔄 Sensor Status: Starting high-performance streaming")
+        
+        consecutive_empty_reads = 0
+        
+        while self.running and self.state in [ConnectionState.CONNECTED, ConnectionState.STREAMING]:
+            try:
+                self.socket.settimeout(0.1)
+                data_chunk = self.socket.recv(self.buffer_size)
+                
+                if not data_chunk:
+                    consecutive_empty_reads += 1
+                    if consecutive_empty_reads > 50:
+                        logger.error("❌ Sensor Status: Too many empty reads, connection may be lost")
+                        self._set_state(ConnectionState.ERROR)
+                        break
+                    continue
+                
+                consecutive_empty_reads = 0
+                self.frame_buffer += data_chunk
+                
+                self._process_status_frame_buffer()
+                
+            except socket.timeout:
+                continue
+            except Exception as e:
+                self.consecutive_errors += 1
+                if self.consecutive_errors > 10:
+                    logger.error(f"❌ Sensor Status: Too many consecutive errors: {e}")
+                    self._set_state(ConnectionState.ERROR)
+                    break
+                logger.debug(f"Sensor Status Stream error: {e}")
+                time.sleep(0.01)
+        
+        self._set_state(ConnectionState.DISCONNECTED)
+        logger.info("🔄 Sensor Status: High-performance streaming stopped")
+
+    def _process_status_frame_buffer(self):
+        """Process sensor status frames from buffer"""
+        while True:
+            if len(self.frame_buffer) < self.HEADER_SIZE:
+                break # Not enough data for header
+
+            header_values = struct.unpack('<5I', self.frame_buffer[:self.HEADER_SIZE])
+            frame_start_marker_int_from_header = header_values[0]
+            frame_number = header_values[1]
+            payload_size_from_header_field = header_values[2] # The 38400 value
+            num_sensors_in_frame = header_values[3] # The 64 value
+            actual_payload_size_for_status = header_values[4] # The 600 value
+
+            # Calculate full frame size using the total payload size from header_values[2]
+            full_frame_size = self.HEADER_SIZE + payload_size_from_header_field + self.FOOTER_SIZE
+
+            if len(self.frame_buffer) < full_frame_size:
+                # print(f"DEBUG: Sensor Status: Current buffer size: {len(self.frame_buffer)}, Need: {full_frame_size}. Waiting for more data...")
+                break # Not enough data for full frame
+
+            frame_data = self.frame_buffer[:full_frame_size]
+
+            try:
+                # Validate frame start
+                received_frame_start_bytes = frame_data[:4]
+                if received_frame_start_bytes != self.FRAME_START_MARKER:
+                    raise ValueError(f"Frame start mismatch: {received_frame_start_bytes.hex()}")
+
+                # Validate header values
+                if (struct.pack('<I', frame_start_marker_int_from_header) != self.FRAME_START_MARKER or
+                    num_sensors_in_frame != self.EXPECTED_NUM_SENSORS):
+                    raise ValueError(f"Header validation failed: {header_values}")
+
+                # Extract payload using the total payload size from header_values[2]
+                payload_bytes = frame_data[self.HEADER_SIZE : self.HEADER_SIZE + payload_size_from_header_field]
+
+                # Validate footer
+                footer_start = self.HEADER_SIZE + payload_size_from_header_field
+                footer_data = frame_data[footer_start : footer_start + self.FOOTER_SIZE]
+                
+                if len(footer_data) < self.FOOTER_SIZE:
+                    raise ValueError("Incomplete status footer.")
+
+                payload_end_marker = footer_data[0:4]
+                frame_end_marker = footer_data[8:12]
+
+                if payload_end_marker != self.PAYLOAD_END_MARKER or frame_end_marker != self.FRAME_END_MARKER:
+                    raise ValueError(f"Footer mismatch: {payload_end_marker.hex()} (expected {self.PAYLOAD_END_MARKER.hex()}), {frame_end_marker.hex()} (expected {self.FRAME_END_MARKER.hex()})")
+
+                # --- Parse the 600-byte Status Payload ---
+                # This assumes the 600 bytes are at the beginning of the 38400-byte payload
+                status_strings_bytes = payload_bytes[0:300]
+                status_strings = status_strings_bytes.decode('utf-8', errors='ignore')
+
+                status_values_bytes = payload_bytes[300:600]
+                
+                sensor_statuses = {}
+                for i in range(self.EXPECTED_NUM_SENSORS): # 64 sensors
+                    offset = i * 4 # Assuming 4 bytes per sensor for ACT, LLS, SLS, FLS
+                    if offset + 4 <= len(status_values_bytes):
+                        sensor_data = status_values_bytes[offset : offset + 4]
+                        act, lls, sls, fls = struct.unpack('<4B', sensor_data)
+                        sensor_statuses[i] = {
+                            'ACT': act,
+                            'LLS': lls,
+                            'SLS': sls,
+                            'FLS': fls
+                        }
+                    else:
+                        logger.warning(f"Sensor Status: Not enough bytes for sensor {i} status")
+                        break
+
+                self.latest_sensor_statuses = SensorStatus(
+                    frame_number=frame_number,
+                    payload_size_from_header_field=payload_size_from_header_field,
+                    num_sensors=num_sensors_in_frame,
+                    actual_payload_size_for_status=actual_payload_size_for_status,
+                    status_strings=status_strings,
+                    status_values_raw_hex=status_values_bytes.hex(),
+                    parsed_sensor_statuses=sensor_statuses,
+                    timestamp=time.time()
+                )
+                logger.debug(f"Sensor Status: Parsed frame {frame_number}")
+
+                # Remove the parsed frame from the buffer
+                self.frame_buffer = self.frame_buffer[full_frame_size:]
+                self.consecutive_errors = 0
+
+            except Exception as e:
+                logger.error(f"Sensor Status: Error parsing frame: {e}")
+                # Find next sync position to resync buffer
+                sync_pos = self.frame_buffer.find(self.FRAME_START_MARKER, 1)
+                if sync_pos != -1:
+                    self.frame_buffer = self.frame_buffer[sync_pos:]
+                    logger.warning(f"Sensor Status: Resyncing buffer, discarding {sync_pos} bytes.")
+                else:
+                    self.frame_buffer = b'' # Clear buffer if no sync found
+                    logger.warning("Sensor Status: No sync found, clearing buffer.")
+                self.consecutive_errors += 1
+                if self.consecutive_errors > 10:
+                    logger.error("Sensor Status: Too many consecutive parsing errors, stopping stream.")
+                    self._set_state(ConnectionState.ERROR)
+                    break
+                break # Break from while loop to get more data
+
+    def get_latest_sensor_statuses(self) -> Optional[SensorStatus]:
+        """Returns the latest parsed sensor status data."""
+        return self.latest_sensor_statuses
+
+    def disconnect(self):
+        """Disconnect and cleanup"""
+        logger.info("🔌 Disconnecting Sensor Status connection...")
+        self.running = False
+        if self.stream_thread and self.stream_thread.is_alive():
+            self.stream_thread.join(timeout=2.0)
+        if self.socket:
+            try:
+                self.socket.close()
+            except:
+                pass
+        self._set_state(ConnectionState.DISCONNECTED)
+        logger.info("Sensor Status: Disconnected.")
 
 
 # Factory function for backward compatibility

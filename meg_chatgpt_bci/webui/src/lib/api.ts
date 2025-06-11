@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { ApiResponse } from '../types'
+import { ApiResponse, MEGConnectionTestResponse } from '../types'
 
 // Create axios instance with base configuration
 const apiClient = axios.create({
@@ -62,8 +62,8 @@ export const api = {
     return apiClient.get(url, { params })
   },
 
-  post: <T = any>(url: string, data?: any): Promise<T> => {
-    return apiClient.post(url, data)
+  post: <T = any>(url: string, data?: any, config?: any): Promise<T> => {
+    return apiClient.post(url, data, config)
   },
 
   put: <T = any>(url: string, data?: any): Promise<T> => {
@@ -83,8 +83,23 @@ export const api = {
     getStatus: () => api.get('/api/meg/status'),
     connect: (config: any) => api.post('/api/meg/connect', config),
     disconnect: () => api.post('/api/meg/disconnect'),
-    testConnection: (config: any) => api.post('/api/meg/test', config),
+    testConnection: (config: any) => api.post('/api/system/test-meg-connection', config), // Corrected endpoint
     getConnectionInfo: () => api.get('/api/meg/info'),
+    debugStreamTest: async (config: { host: string; port: number; timeout: number }) => {
+      const response = await fetch(`${apiClient.defaults.baseURL}/api/meg/debug_stream_test`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(config),
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      return response.body.getReader();
+    },
   },
 
   // Training endpoints
@@ -105,8 +120,8 @@ export const api = {
   // Inference endpoints
   inference: {
     predict: (data: any) => api.post('/api/inference/predict', data),
-    startRealtime: () => api.post('/api/inference/realtime/start'),
-    stopRealtime: () => api.post('/api/inference/realtime/stop'),
+    startRealtime: () => api.post('/api/inference/start_realtime'), // Corrected endpoint
+    stopRealtime: () => api.post('/api/inference/stop_realtime'),   // Corrected endpoint
     getModels: () => api.get('/api/inference/models'),
     setActiveModel: (modelId: string) => api.post(`/api/inference/models/${modelId}/activate`),
   },
@@ -118,6 +133,8 @@ export const api = {
     getMetrics: () => api.get('/api/system/metrics'),
     getConfig: () => api.get('/api/system/config'),
     updateConfig: (config: any) => api.put('/api/system/config', config),
+    testMegConnection: () => api.post<MEGConnectionTestResponse>('/api/system/test-meg-connection'),
+    getSensorStatus: () => api.get('/api/system/sensor_status'), // Added sensor status endpoint
   },
 
   // Phantom controller endpoints
