@@ -10,12 +10,14 @@ import {
   AlertCircle,
   Settings,
   Save,
-  Download
+  Download,
+  Loader2
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { TrainingSession, TrainingConfig, TrainingTrial } from '../types'
 import toast from 'react-hot-toast'
+import { clsx } from 'clsx' // Import clsx
 
 const defaultConfig: TrainingConfig = {
   trialsPerDirection: 10,
@@ -137,47 +139,51 @@ export default function Training() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 p-6 bg-gray-950 min-h-screen text-gray-100">
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Training</h1>
-          <p className="text-gray-600">
-            Train the BCI system to recognize your movement intentions
-          </p>
-        </div>
-        <div className="flex space-x-3">
-          <button
-            onClick={() => setShowConfig(!showConfig)}
-            className="btn-secondary"
-          >
-            <Settings className="h-4 w-4 mr-2" />
-            Configure
-          </button>
-          <button
-            onClick={handleCreateSession}
-            disabled={createSessionMutation.isPending}
-            className="btn-primary"
-          >
+      <div className="mb-8">
+        <h1 className="text-4xl font-extrabold text-white mb-3">Training Sessions</h1>
+        <p className="text-gray-400 text-lg">
+          Configure and manage your MEG BCI training sessions
+        </p>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex space-x-3">
+        <button
+          onClick={() => setShowConfig(!showConfig)}
+          className="flex items-center px-4 py-2 border border-gray-700 text-sm font-medium rounded-md shadow-sm text-gray-300 bg-gray-800 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200"
+        >
+          <Settings className="h-4 w-4 mr-2" />
+          Configure
+        </button>
+        <button
+          onClick={handleCreateSession}
+          disabled={createSessionMutation.isPending}
+          className="flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+        >
+          {createSessionMutation.isPending ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
             <Brain className="h-4 w-4 mr-2" />
-            New Session
-          </button>
-        </div>
+          )}
+          New Session
+        </button>
       </div>
 
       {/* Configuration Panel */}
       {showConfig && (
-        <div className="card">
-          <div className="card-header">
-            <h3 className="text-lg font-medium text-gray-900">Training Configuration</h3>
+        <div className="card bg-gray-800/50 border border-gray-700/50 rounded-xl shadow-lg p-6">
+          <div className="card-header mb-4">
+            <h3 className="text-xl font-semibold text-white">Training Configuration</h3>
           </div>
           <div className="card-content">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
-                <label className="label">Trials per Direction</label>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Trials per Direction</label>
                 <input
                   type="number"
-                  className="input"
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                   value={config.trialsPerDirection}
                   onChange={(e) => setConfig({
                     ...config,
@@ -188,10 +194,10 @@ export default function Training() {
                 />
               </div>
               <div>
-                <label className="label">Trial Duration (s)</label>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Trial Duration (s)</label>
                 <input
                   type="number"
-                  className="input"
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                   value={config.trialDuration}
                   onChange={(e) => setConfig({
                     ...config,
@@ -202,10 +208,10 @@ export default function Training() {
                 />
               </div>
               <div>
-                <label className="label">Rest Duration (s)</label>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Rest Duration (s)</label>
                 <input
                   type="number"
-                  className="input"
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                   value={config.restDuration}
                   onChange={(e) => setConfig({
                     ...config,
@@ -216,10 +222,10 @@ export default function Training() {
                 />
               </div>
               <div>
-                <label className="label">Cue Duration (s)</label>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Cue Duration (s)</label>
                 <input
                   type="number"
-                  className="input"
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                   value={config.cueDuration}
                   onChange={(e) => setConfig({
                     ...config,
@@ -231,11 +237,11 @@ export default function Training() {
                 />
               </div>
             </div>
-            <div className="mt-4">
-              <label className="label">Directions</label>
-              <div className="flex flex-wrap gap-2 mt-2">
+            <div className="mt-6">
+              <label className="block text-sm font-medium text-gray-300 mb-2">Directions</label>
+              <div className="flex flex-wrap gap-3">
                 {['up', 'down', 'left', 'right', 'rest'].map((direction) => (
-                  <label key={direction} className="flex items-center">
+                  <label key={direction} className="flex items-center text-gray-200 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={config.directions.includes(direction)}
@@ -252,9 +258,9 @@ export default function Training() {
                           })
                         }
                       }}
-                      className="mr-2"
+                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-600 rounded"
                     />
-                    <span className="text-sm capitalize">{direction}</span>
+                    <span className="ml-2 text-sm capitalize">{direction}</span>
                   </label>
                 ))}
               </div>
@@ -267,112 +273,119 @@ export default function Training() {
       {currentSession && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Session Control */}
-          <div className="lg:col-span-1">
-            <div className="card">
-              <div className="card-header">
-                <h3 className="text-lg font-medium text-gray-900">Session Control</h3>
+          <div className="lg:col-span-1 card bg-gray-800/50 border border-gray-700/50 rounded-xl shadow-lg p-6">
+            <div className="card-header mb-4">
+              <h3 className="text-xl font-semibold text-white">Session Control</h3>
+            </div>
+            <div className="card-content space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-400">Status</span>
+                <span className={clsx(
+                  "px-2 py-1 rounded-full text-xs font-medium",
+                  currentSession.status === 'active' && 'bg-blue-500/20 text-blue-400',
+                  currentSession.status === 'completed' && 'bg-emerald-500/20 text-emerald-400',
+                  currentSession.status === 'failed' && 'bg-red-500/20 text-red-400'
+                )}>
+                  {currentSession.status}
+                </span>
               </div>
-              <div className="card-content space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-500">Status</span>
-                  <span className={`status-indicator ${
-                    currentSession.status === 'active' ? 'status-processing' :
-                    currentSession.status === 'completed' ? 'status-connected' :
-                    'status-disconnected'
-                  }`}>
-                    {currentSession.status}
-                  </span>
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-500">Progress</span>
-                  <span className="text-sm font-medium text-gray-900">
-                    {currentSession.trialsCompleted} / {currentSession.totalTrials}
-                  </span>
-                </div>
+              
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-400">Progress</span>
+                <span className="text-sm font-medium text-gray-100">
+                  {currentSession.trialsCompleted} / {currentSession.totalTrials}
+                </span>
+              </div>
 
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${getProgressPercentage()}%` }}
-                  />
-                </div>
+              <div className="w-full bg-gray-700 rounded-full h-2.5">
+                <div 
+                  className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"
+                  style={{ width: `${getProgressPercentage()}%` }}
+                />
+              </div>
 
-                <div className="flex space-x-2">
-                  {currentSession.status === 'active' ? (
-                    <button
-                      onClick={handleStopSession}
-                      disabled={stopSessionMutation.isPending}
-                      className="btn-error flex-1"
-                    >
+              <div className="flex space-x-2 pt-2">
+                {currentSession.status === 'active' ? (
+                  <button
+                    onClick={handleStopSession}
+                    disabled={stopSessionMutation.isPending}
+                    className="flex-1 flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                  >
+                    {stopSessionMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
                       <Square className="h-4 w-4 mr-2" />
-                      Stop
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handleStartSession}
-                      disabled={startSessionMutation.isPending}
-                      className="btn-success flex-1"
-                    >
-                      <Play className="h-4 w-4 mr-2" />
-                      Start
-                    </button>
-                  )}
-                </div>
-
-                <div className="pt-4 border-t border-gray-200">
-                  <div className="text-sm text-gray-500 space-y-1">
-                    <div>Started: {new Date(currentSession.startTime).toLocaleString()}</div>
-                    {currentSession.endTime && (
-                      <div>Ended: {new Date(currentSession.endTime).toLocaleString()}</div>
                     )}
-                  </div>
+                    Stop
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleStartSession}
+                    disabled={startSessionMutation.isPending || currentSession.status === 'completed'}
+                    className="flex-1 flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                  >
+                    {startSessionMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Play className="h-4 w-4 mr-2" />
+                    )}
+                    Start
+                  </button>
+                )}
+              </div>
+
+              <div className="pt-4 border-t border-gray-700/50">
+                <div className="text-sm text-gray-400 space-y-1">
+                  <div>Started: {new Date(currentSession.startTime).toLocaleString()}</div>
+                  {currentSession.endTime && (
+                    <div>Ended: {new Date(currentSession.endTime).toLocaleString()}</div>
+                  )}
                 </div>
               </div>
             </div>
           </div>
 
           {/* Trial Progress */}
-          <div className="lg:col-span-2">
-            <div className="card">
-              <div className="card-header">
-                <h3 className="text-lg font-medium text-gray-900">Trial Progress</h3>
+          <div className="lg:col-span-2 card bg-gray-800/50 border border-gray-700/50 rounded-xl shadow-lg p-6">
+            <div className="card-header mb-4">
+              <h3 className="text-xl font-semibold text-white">Trial Progress</h3>
+            </div>
+            <div className="card-content">
+              <div className="grid grid-cols-10 gap-2">
+                {trials.map((trial, index) => (
+                  <TrialIndicator
+                    key={trial.id}
+                    trial={trial}
+                    isActive={currentSession.status === 'active' && index === currentSession.trialsCompleted}
+                  />
+                ))}
+                {/* Placeholder for remaining trials */}
+                {Array.from({ length: currentSession.totalTrials - trials.length }).map((_, index) => (
+                  <div
+                    key={`placeholder-${index}`}
+                    className="w-8 h-8 rounded-full bg-gray-700 border-2 border-dashed border-gray-600 flex items-center justify-center text-gray-500"
+                  >
+                    {index + trials.length + 1}
+                  </div>
+                ))}
               </div>
-              <div className="card-content">
-                <div className="grid grid-cols-10 gap-2">
-                  {trials.map((trial, index) => (
-                    <TrialIndicator
-                      key={trial.id}
-                      trial={trial}
-                      isActive={currentSession.status === 'active' && index === currentSession.trialsCompleted}
-                    />
-                  ))}
-                  {/* Placeholder for remaining trials */}
-                  {Array.from({ length: currentSession.totalTrials - trials.length }).map((_, index) => (
-                    <div
-                      key={`placeholder-${index}`}
-                      className="w-8 h-8 rounded-full bg-gray-200 border-2 border-dashed border-gray-300"
-                    />
-                  ))}
+              
+              <div className="mt-6 flex flex-wrap items-center space-x-4 text-sm text-gray-300">
+                <div className="flex items-center">
+                  <div className="w-3 h-3 rounded-full bg-green-500 mr-2" />
+                  <span>Good Quality</span>
                 </div>
-                
-                <div className="mt-4 flex items-center space-x-4 text-sm">
-                  <div className="flex items-center">
-                    <div className="w-3 h-3 rounded-full bg-green-500 mr-2" />
-                    <span>Good Quality</span>
-                  </div>
-                  <div className="flex items-center">
-                    <div className="w-3 h-3 rounded-full bg-yellow-500 mr-2" />
-                    <span>Fair Quality</span>
-                  </div>
-                  <div className="flex items-center">
-                    <div className="w-3 h-3 rounded-full bg-red-500 mr-2" />
-                    <span>Poor Quality</span>
-                  </div>
-                  <div className="flex items-center">
-                    <div className="w-3 h-3 rounded-full bg-blue-500 mr-2" />
-                    <span>Active</span>
-                  </div>
+                <div className="flex items-center">
+                  <div className="w-3 h-3 rounded-full bg-yellow-500 mr-2" />
+                  <span>Fair Quality</span>
+                </div>
+                <div className="flex items-center">
+                  <div className="w-3 h-3 rounded-full bg-red-500 mr-2" />
+                  <span>Poor Quality</span>
+                </div>
+                <div className="flex items-center">
+                  <div className="w-3 h-3 rounded-full bg-blue-500 mr-2" />
+                  <span>Active</span>
                 </div>
               </div>
             </div>
@@ -381,72 +394,76 @@ export default function Training() {
       )}
 
       {/* Session History */}
-      <div className="card">
-        <div className="card-header">
-          <h3 className="text-lg font-medium text-gray-900">Training Sessions</h3>
+      <div className="card bg-gray-800/50 border border-gray-700/50 rounded-xl shadow-lg p-6">
+        <div className="card-header mb-4">
+          <h3 className="text-xl font-semibold text-white">Training Sessions History</h3>
         </div>
         <div className="card-content">
           {sessions.length === 0 ? (
-            <div className="text-center py-8">
-              <Brain className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-500">No training sessions yet</p>
-              <p className="text-sm text-gray-400">Create your first session to get started</p>
+            <div className="text-center py-8 text-gray-400">
+              <Brain className="h-12 w-12 text-gray-600 mx-auto mb-4" />
+              <p className="text-lg font-medium">No training sessions yet</p>
+              <p className="text-sm">Create your first session to get started</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+              <table className="min-w-full divide-y divide-gray-700">
+                <thead className="bg-gray-700">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
                       Session
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
                       Status
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
                       Progress
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
                       Started
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
                       Actions
                     </th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="bg-gray-800 divide-y divide-gray-700">
                   {sessions.map((session) => (
-                    <tr key={session.id} className={session.id === activeSession ? 'bg-blue-50' : ''}>
+                    <tr key={session.id} className={clsx(
+                      "hover:bg-gray-700 transition-colors duration-150",
+                      session.id === activeSession && 'bg-indigo-900/30'
+                    )}>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{session.name}</div>
-                        <div className="text-sm text-gray-500">
+                        <div className="text-sm font-medium text-gray-100">{session.name}</div>
+                        <div className="text-sm text-gray-400">
                           {session.directions.join(', ')}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`status-indicator ${
-                          session.status === 'active' ? 'status-processing' :
-                          session.status === 'completed' ? 'status-connected' :
-                          'status-disconnected'
-                        }`}>
+                        <span className={clsx(
+                          "px-2 py-1 rounded-full text-xs font-medium",
+                          session.status === 'active' && 'bg-blue-500/20 text-blue-400',
+                          session.status === 'completed' && 'bg-emerald-500/20 text-emerald-400',
+                          session.status === 'failed' && 'bg-red-500/20 text-red-400'
+                        )}>
                           {session.status}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-100">
                         {session.trialsCompleted} / {session.totalTrials}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
                         {new Date(session.startTime).toLocaleString()}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <button
                           onClick={() => setActiveSession(session.id)}
-                          className="text-blue-600 hover:text-blue-900 mr-3"
+                          className="text-indigo-400 hover:text-indigo-300 mr-3"
                         >
                           View
                         </button>
                         {session.status === 'completed' && (
-                          <button className="text-green-600 hover:text-green-900">
+                          <button className="text-emerald-400 hover:text-emerald-300">
                             <Download className="h-4 w-4" />
                           </button>
                         )}

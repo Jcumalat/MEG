@@ -1,12 +1,17 @@
 // MEG System Types
-export interface MEGConnectionStatus {
+export interface MEGConnectionStatus { // Reverted to original name and interface
   isConnected: boolean
-  connectionType: 'TCP' | 'LSL' | null
-  host: string
-  port: number
-  samplingRate: number
-  channels: number
-  lastUpdate: string
+  connectionType?: 'TCP' | 'LSL' | null
+  host?: string
+  port?: number
+  samplingRate?: number
+  channels?: number
+  lastUpdate?: string
+  throughput?: number
+  frameRate?: number
+  quality?: 'excellent' | 'good' | 'fair' | 'poor'
+  state: string
+  stats?: Record<string, any>
 }
 
 export interface MEGData {
@@ -126,12 +131,14 @@ export interface PerformanceMetrics {
   droppedSamples: number
 }
 
+export type OverallSystemStatus = 'healthy' | 'warning' | 'error' | 'disconnected';
+
 export interface SystemHealth {
-  megConnection: 'healthy' | 'warning' | 'error'
-  signalProcessing: 'healthy' | 'warning' | 'error'
-  classification: 'healthy' | 'warning' | 'error'
-  storage: 'healthy' | 'warning' | 'error'
-  overall: 'healthy' | 'warning' | 'error'
+  megConnection: OverallSystemStatus;
+  signalProcessing: OverallSystemStatus;
+  classification: OverallSystemStatus;
+  storage: OverallSystemStatus;
+  overall: OverallSystemStatus;
   lastCheck: string
 }
 
@@ -167,6 +174,14 @@ export interface ApiResponse<T = any> {
   data?: T
   error?: string
   timestamp: string
+}
+
+export interface MEGConnectionTestResponse {
+  status: 'success' | 'error';
+  message: string;
+  connectionTime?: number;
+  throughput?: number;
+  framesFound?: number;
 }
 
 export interface PaginatedResponse<T> {
@@ -213,4 +228,21 @@ export interface TimeSeriesData {
   name: string
   data: ChartDataPoint[]
   color: string
+}
+
+export interface SensorStatus {
+  frame_number: number;
+  payload_size_from_header_field: number;
+  num_sensors: number;
+  actual_payload_size_for_status: number;
+  status_strings: string;
+  status_values_raw_hex: string;
+  parsed_sensor_statuses: { [key: number]: { ACT: number; LLS: number; SLS: number; FLS: number; }; };
+  timestamp: number;
+}
+
+export interface MEGMonitorHookData {
+  data: number[][]
+  samplingRate: number
+  channels: number
 }

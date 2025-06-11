@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import { MEGConfig, SignalProcessingConfig, PhantomConfig } from '../types'
+import { MEGConfig, SignalProcessingConfig, PhantomConfig, MEGConnectionTestResponse } from '../types'
 import toast from 'react-hot-toast'
 
 const defaultMEGConfig: MEGConfig = {
@@ -76,6 +76,7 @@ export default function Configuration() {
   const [signalConfig, setSignalConfig] = useState<SignalProcessingConfig>(defaultSignalConfig)
   const [phantomConfig, setPhantomConfig] = useState<PhantomConfig>(defaultPhantomConfig)
   const [testingConnection, setTestingConnection] = useState(false)
+  const [connectionTestResult, setConnectionTestResult] = useState<MEGConnectionTestResponse | null>(null)
   const queryClient = useQueryClient()
 
   // Fetch current configuration
@@ -108,10 +109,18 @@ export default function Configuration() {
   // Test MEG connection mutation
   const testConnectionMutation = useMutation({
     mutationFn: (config: MEGConfig) => api.meg.testConnection(config),
-    onSuccess: () => {
-      toast.success('MEG connection test successful')
+    onSuccess: (data: MEGConnectionTestResponse) => {
+      console.log('MEG connection test success:', data)
+      setConnectionTestResult(data)
+      if (data.status === 'success') {
+        toast.success('MEG connection test successful')
+      } else {
+        toast.error(`Connection test failed: ${data.message}`)
+      }
     },
     onError: (error: Error) => {
+      console.error('MEG connection test error:', error)
+      setConnectionTestResult({ status: 'error', message: error.message })
       toast.error(`Connection test failed: ${error.message}`)
     }
   })
@@ -126,6 +135,7 @@ export default function Configuration() {
   }
 
   const handleTestConnection = async () => {
+    console.log('handleTestConnection called')
     setTestingConnection(true)
     try {
       await testConnectionMutation.mutateAsync(megConfig)
@@ -266,6 +276,7 @@ export default function Configuration() {
             </div>
 
             <div className="pt-4">
+              {/* This button attempts to connect to the MEG system */}
               <button
                 onClick={handleTestConnection}
                 disabled={testingConnection}
@@ -274,6 +285,31 @@ export default function Configuration() {
                 <TestTube className="h-4 w-4 mr-2" />
                 {testingConnection ? 'Testing...' : 'Test Connection'}
               </button>
+              {connectionTestResult && (
+                <div className={`mt-4 p-3 rounded-md text-sm ${
+                  connectionTestResult.status === 'success'
+                    ? 'bg-green-50 text-green-800 border border-green-200'
+                    : 'bg-red-50 text-red-800 border border-red-200'
+                }`}>
+                  <div className="flex items-center">
+                    {connectionTestResult.status === 'success' ? (
+                      <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
+                    ) : (
+                      <AlertTriangle className="h-4 w-4 mr-2 text-red-500" />
+                    )}
+                    <span className="font-medium">Connection Test Result:</span>
+                  </div>
+                  <p className="mt-2">
+                    {connectionTestResult.status === 'success' ? (
+                      <>
+                        Connected to {megConfig.host}:{megConfig.port}. Data frames found: {connectionTestResult.framesFound || 'N/A'}. Throughput: {connectionTestResult.throughput?.toFixed(2) || 'N/A'} MB/s.
+                      </>
+                    ) : (
+                      `Failed to connect to ${megConfig.host}:${megConfig.port}. ${connectionTestResult.message}`
+                    )}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>
